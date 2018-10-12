@@ -346,8 +346,8 @@ static const struct flashfs_logfs_cfg flashfs_settings_external_cfg = {
 #include "pios_flash_jedec_priv.h"
 
 static const struct pios_flash_jedec_cfg flash_m25p_cfg = {
-	.expect_manufacturer = JEDEC_MANUFACTURER_ST,
-	.expect_memorytype   = 0x20,
+	.expect_manufacturer = JEDEC_MANUFACTURER_ANY,
+	.expect_memorytype   = JEDEC_MEMORYTYPE_ANY,
 	.expect_capacity     = 0x15,
 	.sector_erase        = 0xD8,
 };
