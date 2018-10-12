@@ -274,7 +274,8 @@ void PIOS_Board_Init(void)
 		if (PIOS_RCVR_Init(&pios_ppm_rcvr_id, &pios_ppm_rcvr_driver, pios_ppm_id)) {
 			PIOS_Assert(0);
 		}
-
+		
+		pios_rcvr_group_map[MANUALCONTROLSETTINGS_CHANNELGROUPS_PPM] = pios_ppm_rcvr_id;
 #endif /* PIOS_INCLUDE_PPM */
 		break;
 	}
