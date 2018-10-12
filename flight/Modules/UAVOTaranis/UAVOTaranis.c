@@ -39,45 +39,24 @@
 
 #include "frsky_packing.h"
 #include "pios_thread.h"
-
-#include "openpilot.h"
-#include "physical_constants.h"
+#include "pios_modules.h"
 #include "modulesettings.h"
 #include "flightbatterysettings.h"
 #include "flightbatterystate.h"
 #include "gpsposition.h"
-#include "airspeedactual.h"
 #include "baroaltitude.h"
-#include "accels.h"
-#include "positionactual.h"
-#include "velocityactual.h"
-#include "flightstatus.h"
 
 #if defined(PIOS_INCLUDE_TARANIS_SPORT)
 
 static void uavoTaranisTask(void *parameters);
 
-static bool frsky_encode_rssi(struct frsky_settings *frsky, uint32_t *value, bool test_presence_only, uint32_t arg);
-static bool frsky_encode_swr(struct frsky_settings *frsky, uint32_t *value, bool test_presence_only, uint32_t arg);
-static bool frsky_encode_battery(struct frsky_settings *frsky, uint32_t *value, bool test_presence_only, uint32_t arg);
-
 #define FRSKY_POLL_REQUEST                 0x7e
 #define FRSKY_MINIMUM_POLL_INTERVAL        10000
 
-#define VOLT_RATIO (20)
-
-enum frsky_state {
-	FRSKY_STATE_WAIT_POLL_REQUEST,
-	FRSKY_STATE_WAIT_SENSOR_ID,
-	FRSKY_STATE_WAIT_TX_DONE,
-};
-
 static const struct frsky_value_item frsky_value_items[] = {
 	{FRSKY_CURR_ID,        300,   frsky_encode_current,    0}, // battery current
-	{FRSKY_BATT_ID,        200,   frsky_encode_battery,    0}, // send battery voltage
-	{FRSKY_FUEL_ID,        200,   frsky_encode_fuel,       0}, // consumed battery energy
+	{FRSKY_FUEL_ID,        600,   frsky_encode_fuel,       0}, // consumed battery energy
 	{FRSKY_RSSI_ID,        100,   frsky_encode_rssi,       0}, // send RSSI information
-	{FRSKY_SWR_ID,         100,   frsky_encode_swr,        0}, // send RSSI information
 	{FRSKY_ALT_ID,         100,   frsky_encode_altitude,   0}, // altitude estimate
 	{FRSKY_VARIO_ID,       100,   frsky_encode_vario,      0}, // vertical speed
 	{FRSKY_RPM_ID,         1500,  frsky_encode_rpm,        0}, // encodes flight status!
@@ -90,10 +69,8 @@ static const struct frsky_value_item frsky_value_items[] = {
 };
 
 struct frsky_sport_telemetry {
-	enum frsky_state state;
 	int32_t scheduled_item;
 	uint32_t last_poll_time;
-	uint8_t ignore_rx_chars;
 	uintptr_t com;
 	struct frsky_settings frsky_settings;
 	uint32_t item_last_triggered[NELEMENTS(frsky_value_items)];
@@ -111,46 +88,6 @@ struct frsky_sport_telemetry {
 static struct pios_thread *uavoTaranisTaskHandle;
 static bool module_enabled;
 static struct frsky_sport_telemetry *frsky;
-
-/**
- * Encode RSSI value
- * @param[out] value encoded value
- * @param[in] test_presence_only true when function should only test for availability of this value
- * @param[in] arg argument specified in frsky_value_items[]
- * @returns true when value succesfully encoded or presence test passed
- */
-static bool frsky_encode_rssi(struct frsky_settings *frsky, uint32_t *value, bool test_presence_only, uint32_t arg)
-{
-#if 0
-	uint8_t local_link_quality = 0, local_link_connected = 0; /* XXX */
-
-	RFM22BStatusLinkStateGet(&local_link_connected);
-	RFM22BStatusLinkQualityGet(&local_link_quality);
-
-	RFM22BStatusData rfm22bStatus;
-	RFM22BStatusInstGet(1, &rfm22bStatus);
-#endif
-
-	*value = 0;
-
-	return true;
-}
-
-static bool frsky_encode_swr(struct frsky_settings *frsky, uint32_t *value, bool test_presence_only, uint32_t arg)
-{
-	*value = 1;
-	return true;
-}
-
-static bool frsky_encode_battery(struct frsky_settings *frsky, uint32_t *value, bool test_presence_only, uint32_t arg)
-{
-	float voltage = 0;
-	FlightBatteryStateVoltageGet(&voltage);
-	*value = (uint8_t) (voltage * VOLT_RATIO);
-
-	return true;
-}
-
 
 /**
  * Scan for value item with the longest expired time and schedule it to send in next poll turn
@@ -200,16 +137,29 @@ static bool frsky_send_scheduled_item(void)
  */
 static int32_t uavoTaranisStart(void)
 {
-	if (module_enabled) {
-		// Start tasks
-		uavoTaranisTaskHandle = PIOS_Thread_Create(
-				uavoTaranisTask, "uavoFrSKYSensorHubBridge",
-				STACK_SIZE_BYTES, NULL, TASK_PRIORITY);
-		TaskMonitorAdd(TASKINFO_RUNNING_UAVOFRSKYSENSORHUBBRIDGE,
-				uavoTaranisTaskHandle);
-		return 0;
+	if (!module_enabled)
+		return -1;
+
+	if (FlightBatterySettingsHandle() != NULL
+			&& FlightBatteryStateHandle() != NULL) {
+		uint8_t currentPin;
+		FlightBatterySettingsCurrentPinGet(&currentPin);
+		if (currentPin != FLIGHTBATTERYSETTINGS_CURRENTPIN_NONE)
+			frsky->frsky_settings.use_current_sensor = true;
+		FlightBatterySettingsGet(&frsky->frsky_settings.battery_settings);
+		frsky->frsky_settings.batt_cell_count = frsky->frsky_settings.battery_settings.NbCells;
 	}
-	return -1;
+	if (BaroAltitudeHandle() != NULL
+			&& PIOS_SENSORS_IsRegistered(PIOS_SENSOR_BARO))
+		frsky->frsky_settings.use_baro_sensor = true;
+
+	// Start tasks
+	uavoTaranisTaskHandle = PIOS_Thread_Create(
+			uavoTaranisTask, "uavoFrSKYSensorHubBridge",
+			STACK_SIZE_BYTES, NULL, TASK_PRIORITY);
+	TaskMonitorAdd(TASKINFO_RUNNING_UAVOFRSKYSENSORHUBBRIDGE,
+			uavoTaranisTaskHandle);
+	return 0;
 }
 
 /**
@@ -219,31 +169,17 @@ static int32_t uavoTaranisStart(void)
  */
 static int32_t uavoTaranisInitialize(void)
 {
-	uint32_t sport_com = PIOS_COM_FRSKY_SPORT;
+	uintptr_t sport_com = PIOS_COM_FRSKY_SPORT;
 
 	if (sport_com) {
-
-
 		frsky = PIOS_malloc(sizeof(struct frsky_sport_telemetry));
 		if (frsky != NULL) {
 			memset(frsky, 0x00, sizeof(struct frsky_sport_telemetry));
 
-			// These objects are registered on the TLM so it
-			// can intercept them from the telemetry stream
-			if (FlightBatteryStateInitialize() == -1 \
-				|| FlightStatusInitialize() == -1 \
-				|| PositionActualInitialize() == -1 \
-				|| VelocityActualInitialize()) {
-				module_enabled = false;
-				return -1;
-			}
-
-			frsky->frsky_settings.use_current_sensor = false;
+			frsky->frsky_settings.use_current_sensor = true;
 			frsky->frsky_settings.batt_cell_count = 0;
-			frsky->frsky_settings.use_baro_sensor = false;
-			frsky->state = FRSKY_STATE_WAIT_POLL_REQUEST;
+			frsky->frsky_settings.use_baro_sensor = true;
 			frsky->last_poll_time = PIOS_DELAY_GetuS();
-			frsky->ignore_rx_chars = 0;
 			frsky->scheduled_item = -1;
 			frsky->com = sport_com;
 
@@ -254,16 +190,11 @@ static int32_t uavoTaranisInitialize(void)
 			module_enabled = true;
 			return 0;
 		}
-
-		module_enabled = true;
-
-		return 0;
 	}
-
-	module_enabled = false;
 
 	return -1;
 }
+
 MODULE_INITCALL(uavoTaranisInitialize, uavoTaranisStart)
 
 /**
@@ -271,27 +202,10 @@ MODULE_INITCALL(uavoTaranisInitialize, uavoTaranisStart)
  */
 static void uavoTaranisTask(void *parameters)
 {
-	while(1) {
-
-		if (true) {
-
-			// for some reason, only first four messages are sent.
-			for (uint32_t i = 0; i < sizeof(frsky_value_items) / sizeof(frsky_value_items[0]); i++) {
-				frsky->scheduled_item = i;
-				frsky_send_scheduled_item();
-				PIOS_Thread_Sleep(5);
-			}
-
-		}
-
-		if (false) { 
-
-			// fancier schedlued message sending. doesn't appear to work
-			// currently.
-			PIOS_Thread_Sleep(1);
-			frsky_schedule_next_item();
-			frsky_send_scheduled_item();
-		}
+	while (1) {
+		frsky_send_scheduled_item();
+		frsky_schedule_next_item();
+		PIOS_Thread_Sleep(10);
 
 	}
 }
