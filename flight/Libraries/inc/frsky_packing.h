@@ -100,6 +100,7 @@ bool frsky_encode_gps_speed(struct frsky_settings *frsky, uint32_t *value, bool 
 bool frsky_encode_gps_time(struct frsky_settings *frsky, uint32_t *value, bool test_presence_only, uint32_t arg);
 bool frsky_encode_rpm(struct frsky_settings *frsky, uint32_t *value, bool test_presence_only, uint32_t arg);
 bool frsky_encode_airspeed(struct frsky_settings *frsky, uint32_t *value, bool test_presence_only, uint32_t arg);
+bool frsky_encode_rssi(struct frsky_settings *frsky, uint32_t *value, bool test_presence_only, uint32_t arg);
 uint8_t frsky_insert_byte(uint8_t *obuff, uint16_t *chk, uint8_t byte);
 int32_t frsky_send_frame(uintptr_t com, enum frsky_value_id id, uint32_t value,
 		bool send_prelude);

@@ -52,6 +52,28 @@
 #include "nedaccel.h"
 #include "velocityactual.h"
 #include "attitudeactual.h"
+#include "openlrsstatus.h"
+
+/**
+ * Encode RSSI value
+ * @param[out] value encoded value
+ * @param[in] test_presence_only true when function should only test for availability of this value
+ * @param[in] arg argument specified in frsky_value_items[]
+ * @returns true when value succesfully encoded or presence test passed
+ */
+bool frsky_encode_rssi(struct frsky_settings *frsky, uint32_t *value, bool test_presence_only, uint32_t arg)
+{
+	if (OpenLRSStatusHandle() == NULL)
+		return false;
+	if (test_presence_only)
+		return true;
+
+	uint8_t local_rssi = 0; 
+	OpenLRSStatusLastRSSIGet(&local_rssi);
+	*value = (uint32_t)local_rssi;
+	return true;
+}
+
 /**
  * Encode baro altitude value
  * @param[out] value encoded value
